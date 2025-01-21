@@ -1,0 +1,376 @@
+##Loading in the data
+
+library(dplyr)
+library(ggplot2)
+library(gridExtra)
+
+data <- read.csv("~/Documents/portfolio datasets/Manager salary Survey/Copy of Ask A Manager Salary Survey 2021 (Responses) - Form Responses 1.csv", header = TRUE, sep=",")
+
+
+## In this code, we need to first clean the data, and create new data tables to hold only the information that we are going to use for our study
+## The first thing we will do is combine the two money focused columns together.
+
+## First, we're going to change the names of the columns to something more useable
+
+named_data <- data %>% rename(
+  Age = How.old.are.you.,
+  Industry = What.industry.do.you.work.in.,
+  Job = Job.title,
+  job_context = If.your.job.title.needs.additional.context..please.clarify.here.,
+  Annual_salary = What.is.your.annual.salary...You.ll.indicate.the.currency.in.a.later.question..If.you.are.part.time.or.hourly..please.enter.an.annualized.equivalent....what.you.would.earn.if.you.worked.the.job.40.hours.a.week..52.weeks.a.year..,
+  Bonus_salary = How.much.additional.monetary.compensation.do.you.get..if.any..for.example..bonuses.or.overtime.in.an.average.year...Please.only.include.monetary.compensation.here..not.the.value.of.benefits.,
+  Curreny = Please.indicate.the.currency,
+  Other_Currency = If..Other...please.indicate.the.currency.here..,
+  Income_context = If.your.income.needs.additional.context..please.provide.it.here.,
+  Country = What.country.do.you.work.in.,
+  State = If.you.re.in.the.U.S...what.state.do.you.work.in.,
+  City = What.city.do.you.work.in.,
+  Experience_total = How.many.years.of.professional.work.experience.do.you.have.overall.,
+  Experience_in_field = How.many.years.of.professional.work.experience.do.you.have.in.your.field.,
+  Education = What.is.your.highest.level.of.education.completed.,
+  Gender = What.is.your.gender.,
+  Race = What.is.your.race...Choose.all.that.apply..
+)
+
+
+## First, replace null values with 0
+data_money_no_nulls <- named_data
+
+data_money_no_nulls$Bonus_salary[is.na(data_money_no_nulls$Bonus_salary)] <- 0
+
+##And now we combine both columns to have a total 'salary'
+
+data_full_salary <- data_money_no_nulls
+
+
+## Let's check for NA's in the annaul salary
+
+sum(is.na(data_full_salary$Annual_salary))
+
+
+##Check to see if both columns are numeric
+is.numeric(data_full_salary$Annual_salary)
+is.numeric(data_full_salary$Bonus_salary)
+
+## Checking what the Annual salary data type is
+
+class(data_full_salary$Annual_salary)
+
+
+## Making the Annual salary numeric
+data_full_salary$Annual_salary <- as.numeric(gsub(",","", data_full_salary$Annual_salary))
+
+
+data_full_salary$Full_Salary <- data_full_salary$Annual_salary + data_full_salary$Bonus_salary
+
+## Now we can filter for the four cities we are going to be looking at.
+## In order to do this safely, the first thing we are going to do is filter out
+## For the 4 states that these cities are in. WE do this because the survey gives 
+## check boxes for States, but a text box for Cities, so data is more prone to 
+## Being messy initially in the city input.
+
+## We ended up not using this code, but I will leave it here in case anyone
+## wants to look at data relating to these different cities
+
+
+data_states <- subset(data_full_salary, State %in% c("New York", "Maryland", "California", "Illinois"))
+
+## 1. New York
+    ## There may be a few rows of data that are lost, with people writing the
+    ## New York Birrows instead of NYC, but in this situation, it is a minore issue that we will ignore
+data_ny <- subset(data_full_salary, State %in% c("New York"))
+
+only_nyc <- grep("\\b((NYC|New York City|New York))\\b", data_ny$City, ignore.case = TRUE)
+data_nyc_clean <- data_ny[only_nyc, ]
+data_nyc <- data_nyc_clean
+data_nyc$City = "NYC"
+
+## 2. Maryland
+    ## Some of the data is from the Baltimore country region, but as that is 
+    ##Close enough for our data, it will not be ommited. 
+data_md <- subset(data_full_salary, State %in% c("Maryland"))
+
+balt_only <- grep("\\b(Baltimore)\\b", data_md$City, ignore.case = TRUE)
+data_balt_semi_clean <- data_md[balt_only, ]
+
+    ## one person said their town was NEAR Baltimore, so we need to remove that.
+remove_joppa <- grep("\\b(Joppatowne)\\b", data_balt_semi_clean$City, ignore.case = TRUE)
+
+data_balt_clean <- data_balt_semi_clean[-remove_joppa, ]
+data_balt <- data_balt_clean
+data_balt$City <- "Baltimore"
+
+
+## 3. California
+
+data_ca <- subset(data_full_salary, State %in% c("California"))
+
+la_only <- grep("\\b(Los Angeles|LA)\\b", data_ca$City, ignore.case = TRUE)
+la_semi_clean <- data_ca[la_only, ]
+
+  ## Getting rid of a few pieces of bad data
+
+remove_for_la <- grep("\\b(Mirada|Quinta|near)\\b", la_semi_clean$City)
+data_la_clean <- la_semi_clean[-remove_for_la, ]
+data_la <- data_la_clean
+data_la$City = "LA"
+
+
+## .4 Illinois
+
+
+data_il <- subset(data_full_salary, State %in% c("Illinois"))
+
+
+chicago_only <- grep("\\b(Chicago|chicagoland)\\b", data_il$City, ignore.case = TRUE)
+data_chicago_clean <- data_il[chicago_only, ]
+data_chicago <- data_chicago_clean
+data_chicago$City = "Chicago"
+  ## Everything from the initial pull was clean. Side note, there's one person
+  ## That listed their City as "Affluent Chicago Suburb", and that is very 
+  ## Funny to me.
+
+
+## 5. combined dataset.
+
+data_full_clean <- rbind(data_nyc, data_balt, data_la, data_chicago)
+
+
+
+
+## 6. data by Industry
+
+comp_only <- grep("\\b(Computing or Tech)\\b", data_full_clean$Industry)
+comp_data <- data_full_clean[comp_only, ]
+
+edu_only <- grep("\\b(Primary)\\b", data_full_clean$Industry)
+edu_data <- data_full_clean[edu_only, ]
+
+gov_only <- grep("\\b(Government and Public Administration)\\b", data_full_clean$Industry)
+gov_data <- data_full_clean[gov_only, ]
+
+health_only <- grep("\\b(Health care)\\b", data_full_clean$Industry)
+health_data <- data_full_clean[health_only, ]
+
+
+
+
+
+
+
+
+
+
+
+## Now we can look at some of the data to make some inferences.
+## We will look at a few different industries, to see wage differences between these
+## 4 cities. We'll look at 'computing or Tech', 'Education(Primary/Secondary),
+##Government and Public Administration, and Health care.
+
+## here are some of the questions we are looking at
+
+  ## What industry pays the most
+  ## what cities pay new/less experienced workers more
+
+
+  ##Let's make 4 data sets that have only the relevant job areas
+
+tech_data <- subset(data_full_clean, Industry %in% c("Computing or Tech"))
+edu_data <- subset(data_full_clean, Industry %in% c("Education (Primary/Secondary)"))
+gov_data <- subset(data_full_clean, Industry %in% c("Government and Public Administration"))
+health_data <- subset(data_full_clean, Industry %in% c("Health care"))
+
+
+industry_data <- rbind(tech_data,edu_data,gov_data,health_data)
+
+
+
+##1. what industry pays the most?
+
+library(ggplot2)
+library(scales)
+
+  ## Salary vs industry in the four cities chosen.
+ggplot(industry_data, aes(x= Industry, y= Full_Salary, fill = Industry)) +
+  geom_boxplot() +
+             theme_minimal() +
+             labs(
+               title = "Salary by Industry In all 4 cities",
+               x= "Industry",
+               y= "Salary"
+             ) +
+  theme(axis.text.x = element_text(angle=45, hjust = 1)) +
+  scale_y_continuous(labels=comma)
+
+
+  ## Salary vs Industry for new workers
+
+new_workers_data <- industry_data %>%
+  filter(Experience_in_field %in% c("1 year or less", "2 - 4 years"))
+
+
+ggplot(new_workers_data, aes(x=Industry, y=Full_Salary, fill=Industry)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title= "Salary by Industry for New Workers (0-4 Years Exp. in Industry)",
+    x="Industry",
+    y="Salary"
+  ) +
+  theme(axis.text.x = element_text(angle=45, hjust = 1)) +
+  scale_y_continuous(labels=comma)
+
+
+## Salary comparison by city
+
+comp_sal_plot <-ggplot(comp_data, aes(x=City, y=Full_Salary, fill=City)) +
+  geom_boxplot() +
+  theme_minimal() +
+  labs(
+    title="Salary of Computing or Tech Jobs by City",
+    x="City",
+    y="Salary"
+  ) +
+  theme(axis.text.x = element_text(angle=45, hjust=1)) +
+          scale_y_continuous(labels=comma)
+
+
+
+  gov_sal_plot <- ggplot(gov_data, aes(x=City, y=Full_Salary, fill=City)) +
+    geom_boxplot() +
+    theme_minimal() +
+    labs(
+      title="Salary of Government Jobs by City",
+      x="City",
+      y="Salary"
+    ) +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) +
+    scale_y_continuous(labels=comma)
+
+
+  edu_sal_plot <- ggplot(edu_data, aes(x=City, y=Full_Salary, fill=City)) +
+    geom_boxplot() +
+    theme_minimal() +
+    labs(
+      title="Salary of Education Jobs by City",
+      x="City",
+      y="Salary"
+    ) +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) +
+    scale_y_continuous(labels=comma)
+  
+  health_sal_plot <- ggplot(health_data, aes(x=City, y=Full_Salary, fill=City)) +
+    geom_boxplot() +
+    theme_minimal() +
+    labs(
+      title="Salary of Government Jobs by City",
+      x="City",
+      y="Salary"
+    ) +
+    theme(axis.text.x=element_text(angle=45, hjust=1)) +
+    scale_y_continuous(labels=comma)
+  
+grid.arrange(comp_sal_plot,gov_sal_plot,health_sal_plot,edu_sal_plot, nrow=2, ncol=2)
+
+
+
+## Now we're going to clean some of the tech job data to have data that is 
+## useful for making other graphs that can more clearly show the data, and use that
+## For an infographic
+
+
+    ## SIDENOTE: This would have been much faster if I had used a function
+      ## instead of writing all 4 out by hand, but it is too late for that
+
+
+## 1. Removing outliers
+
+comp_balt <- comp_data %>% filter(City=="Baltimore")
+comp_chi <- comp_data %>% filter(City=="Chicago")
+comp_nyc <- comp_data %>% filter(City=="NYC")
+comp_la <- comp_data %>% filter(City=="LA")
+
+
+## in order to remove the outliers, we take q1, q3, and find iqr(q3-q1)
+##, then set the upper and lower bountds, and filter the data based on those
+
+q1_balt <- quantile(comp_balt$Full_Salary, .25)
+q3_balt <- quantile(comp_balt$Full_Salary, .75)
+iqr_balt <- q3_balt-q1_balt
+
+## bounds
+LB_balt <- q1_balt - 1.5 *iqr_balt
+UB_balt <- q3_balt + 1.5 * iqr_balt
+
+comp_balt_cleaned <- comp_balt %>%
+  filter(Full_Salary >= LB_balt & Full_Salary <= UB_balt)
+
+
+## NOw do this for the other 3
+
+q1_chi <- quantile(comp_chi$Full_Salary, .25)
+q3_chi <- quantile(comp_chi$Full_Salary, .75)
+iqr_chi <- q3_chi - q1_chi
+
+LB_chi <- q1_chi -1.5 * iqr_chi
+UP_chi <- q3_chi +1.5 * iqr_chi
+
+comp_chi_cleaned <- comp_chi %>% 
+  filter(Full_Salary >= LB_chi & Full_Salary <= UP_chi)
+
+
+q1_nyc <- quantile(comp_nyc$Full_Salary, .25)
+q3_nyc <- quantile(comp_nyc$Full_Salary, .75)
+iqr_nyc <- q3_nyc - q1_nyc
+
+LB_nyc <- q1_nyc -1.5 * iqr_nyc
+UP_nyc <- q3_nyc +1.5 * iqr_nyc
+
+comp_nyc_cleaned <- comp_nyc %>% 
+  filter(Full_Salary >= LB_nyc & Full_Salary <= UP_nyc)
+
+
+q1_la <- quantile(comp_la$Full_Salary, .25)
+q3_la <- quantile(comp_la$Full_Salary, .75)
+iqr_la <- q3_chi - q1_chi
+
+LB_la <- q1_la -1.5 * iqr_la
+UP_la <- q3_la +1.5 * iqr_la
+
+comp_la_cleaned <- comp_la %>% 
+  filter(Full_Salary >= LB_la & Full_Salary <= UP_la)
+
+
+## combine the 4 cleaned datasets
+
+clean_comp <- rbind(comp_balt_cleaned, comp_chi_cleaned, comp_nyc_cleaned, comp_la_cleaned)
+
+## Now we can create a histogram to compare the average salary of tech workers by city
+
+
+city_avg_tech <- clean_comp %>%
+  group_by(City) %>%
+  summarise(Average_sal =mean(Full_Salary))
+
+
+
+avg_tech_bar <-ggplot(city_avg_tech, aes(reorder(City, Average_sal), y = Average_sal, fill = City)) +
+                            geom_bar(stat = "identity", show.legend= FALSE) +
+                            labs(
+                              title = "",
+                              x="city",
+                              y="Average Salary"
+                            )+
+                            theme(axis.text.x=element_text(angle=45, hjust=1)) +
+                            scale_y_continuous(labels=comma)
+                          
+## ggsave("Avg_slaray_city2.png", plot = avg_tech_bar, width=8, height=6)
+
+
+
+## I also want to find the exact number for the average salary of these four cities.
+city_avg <- clean_comp %>%
+  group_by(City) %>%
+  summarize(Average_salary = mean(Full_Salary))
+
+
